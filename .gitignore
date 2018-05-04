@@ -1,0 +1,4 @@
+/build
+/winbuild
+*.wav
+*.exe
