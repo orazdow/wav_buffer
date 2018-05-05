@@ -6,10 +6,13 @@ builddir = build/
 SRC = main.cpp wavutil.c pa.cpp pa_ringbuffer.c rb.c 
 
 SRCDIR_2 = lib
+
+PortAudio_Lib = D:/Libraries/portaudio/build
+PortAudio_Include = D:/Libraries/portaudio/include
  
-INCLUDE = -ID:/Libraries/portaudio/include 
+INCLUDE = -I$(PortAudio_Include) 
 INCLUDE += -Ilib
-LIBS = -LD:/Libraries/portaudio/build 
+LIBS = -L$(PortAudio_Lib) 
 LIBS += -lportaudio
 
 CXX = g++
