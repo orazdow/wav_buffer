@@ -1,25 +1,41 @@
+/* Ollie Razdow CS575 - Final Project - Audio Synchronization */
 #include <stdio.h>
-#include "wavutil.h"
 #include <math.h>
+#include <string.h>
 #include "pa.h"
-#include "string.h"
-#include "pa_ringbuffer.h"
+#include "wavutil.h"
 #include "ringbuffer.h"
+#include "pa_ringbuffer.h"
 #include <mutex>
 #include <thread>
 #include <atomic> 
 #include <condition_variable>
 
+// -----------------------
+// SET TEST DEFINITONS HERE
 #define LOCKING
 // #define LOCK_FREE
 #define EXTRA_WORK
+// -----------------------
 
-#define AUDIO_BUFF_LEN 128
-#define RING_BUFF_LEN 2048
+#ifdef LOCK_FREE
+  #define PUSH(buffer, data, size) PaUtil_WriteRingBuffer((buffer), (data), size) 
+  #define POP(buffer, data, size) PaUtil_ReadRingBuffer((buffer), (data), size)
+  #define POP_AVAIL(buffer) PaUtil_GetRingBufferReadAvailable((buffer))
+#else
+  #define PUSH(buffer, data, size) rb_push((buffer), (data), size)
+  #define POP(buffer, data, size) rb_pop((buffer), (data), size) 
+  #define POP_AVAIL(buffer) rb_popAvail((buffer))  
+#endif  
 #define MIN(a,b) (a)<(b) ? (a):(b)
 
-const double PI = acos(-1);
-const double srate = 44100;
+// playback buffer
+#define AUDIO_BUFF_LEN 128
+// ring buffer
+#define RING_BUFF_LEN 2048
+// sample rate
+#define SAMPLE_RATE 44100
+
 const float downcvt = (float)1/32768.0;
 
 std::mutex wav_mutex;
@@ -34,35 +50,40 @@ typedef struct{
 
 }wavbuff;
 
-RingBuffer rb;
 WavHeader wh;
 wavbuff wb;
 
-PaUtilRingBuffer aBuffer; 
-void* aBuffData;
+#ifndef LOCK_FREE
+  RingBuffer rb;
+#else
+  PaUtilRingBuffer rb; 
+  void* aBuffData;
+#endif
+
 short temp[4096];
 int run = 1;
+char line[2048];
+char filename[2048];
 
+// producer thread
 void produce(){
   while(run){
+
     size_t num = 0;
 
   #ifdef LOCKING
     std::unique_lock<std::mutex> lk(wav_mutex);
 
-    while(buffRequest == 0){  
+    while(buffRequest == 0)  
       cv.wait(lk);
-    }
   #endif
 
-  #ifdef LOCK_FREE  
-    num = PaUtil_WriteRingBuffer(&aBuffer, wb.data+wb.index, buffRequest);
-  #else
-    num = rb_push(&rb, wb.data+wb.index, buffRequest);
-  #endif
+    // write data to buffer
+    num = PUSH(&rb, wb.data+wb.index, buffRequest);
 
+    // update buffer request
     if(num > 256)
-    buffRequest = 0;
+      buffRequest = 0;
 
   #ifdef LOCKING
     ccv.notify_one();
@@ -71,42 +92,28 @@ void produce(){
   }
 }
 
+// audio thread
 void pafunc(const float* in, float* out, unsigned long frames, void* data){
 
   #ifdef LOCKING
-       std::unique_lock<std::mutex> lk(wav_mutex); 
-  #endif
-
-       wavbuff* w = (wavbuff*)data;
-       size_t num = 0;
-
-  #ifdef LOCKING
-      #ifndef LOCK_FREE
-         while(rb_popAvail(&rb) < frames*2){
-      #else
-         while(PaUtil_GetRingBufferReadAvailable(&aBuffer) < frames*2){
-      #endif
+      std::unique_lock<std::mutex> lk(wav_mutex); 
+      while(POP_AVAIL(&rb) < frames*2)
         ccv.wait(lk);
-      } 
   #endif
 
-      #ifndef LOCK_FREE
-        num = rb_pop(&rb, temp, frames);
-      #else
-        num = PaUtil_ReadRingBuffer(&aBuffer, temp, frames);
-      #endif
+        wavbuff* w = (wavbuff*)data;
 
-          for(unsigned long i = 0; i < num; i++ ){
-            *out++ = (float)temp[i]*downcvt;
-            w->index = (w->index+1) % w->length;
-         }
+        // read data from buffer
+        size_t num = POP(&rb, temp, frames);
 
-      #ifndef LOCK_FREE
-        if(rb_popAvail(&rb) < frames*2){
-      #else
-        if(PaUtil_GetRingBufferReadAvailable(&aBuffer) < frames*2){  
-      #endif
+        // write samples
+        for(unsigned long i = 0; i < num; i++ ){
+          *out++ = (float)temp[i]*downcvt;
+          w->index = (w->index+1) % w->length;
+        }
 
+        // update buffer request
+        if(POP_AVAIL(&rb) < frames*2){
           buffRequest =  MIN(w->length-w->index, frames*16);   
         }else{
           buffRequest = 0;
@@ -118,10 +125,12 @@ void pafunc(const float* in, float* out, unsigned long frames, void* data){
     #endif
 }
 
+// simulate extra loading time
 void randomWork(unsigned long long len){
     while(len--){}
 }
 
+// load wav file
 int loadWav(const char* path, WavHeader* wh, wavbuff* wb){
     if(getWav(path, wh) < 0)
         return -1;
@@ -140,6 +149,7 @@ int loadWav(const char* path, WavHeader* wh, wavbuff* wb){
     return 0;
 }
 
+// load command
 int loadcmd(const char* in, char* buff){
   char* ldptr = NULL;
   char* spc = NULL;
@@ -160,29 +170,32 @@ int loadcmd(const char* in, char* buff){
     return 0;
 }
 
-char line[2048];
-char filename[2048];
-
+// main
 int main(int argc, char** argv) {   
 
+    // initial buffer request
     buffRequest = 2048;  
-     
+  
+  // initialize ring buffer   
   #ifndef LOCK_FREE
     rb_init(&rb, NULL, RING_BUFF_LEN);
   #else
     aBuffData = (short*)malloc(sizeof(short)*RING_BUFF_LEN);
-    PaUtil_InitializeRingBuffer(&aBuffer, sizeof(short), RING_BUFF_LEN, aBuffData);
+    PaUtil_InitializeRingBuffer(&rb, sizeof(short), RING_BUFF_LEN, aBuffData);
   #endif  
 
+    // load wav file
     if(loadWav("worm.wav", &wh, &wb) < 0)
         return -1;
 
+    // start producer thread
     std::thread t(produce);
 
-
-    Pa a(pafunc, 0, 1, srate, AUDIO_BUFF_LEN, &wb);
+    // start audio thread
+    Pa a(pafunc, 0, 1, SAMPLE_RATE, AUDIO_BUFF_LEN, &wb);
     a.start();
 
+    // poll for load/quit commands
     while(1){
         fgets(line, 2048, stdin);
 
@@ -193,9 +206,9 @@ int main(int argc, char** argv) {
 
         if(strncmp(line, "quit", 4) == 0)
             break;
-
     }
 
+    // exit program
     run = 0;
     t.join();
 
@@ -204,5 +217,6 @@ int main(int argc, char** argv) {
   #else
     free(aBuffData);
   #endif
+
     return 0;
 }

@@ -1,12 +1,9 @@
 #include "ringbuffer.h"
 #include "stdlib.h"
-// #include "stdio.h"
 
 size_t rb_push(RingBuffer* r, short* data, size_t num){
 	size_t written = 0; 	
-//	while(r->head != tailbump(r->tail, r->size) && written != num){
 	while((r->head+1) % r->size != r->tail && written != num){
-	//while(r->head != r->tail-1 && written != num){
 		r->buffer[r->head] = *data++;
 		r->head = (r->head+1) % r->size; 
 		written++;
@@ -71,40 +68,4 @@ int rb_init(RingBuffer* r, short* buff, size_t size){
 
 void rb_destroy(RingBuffer* r){
 	free(r->buffer);
-}
-
-size_t tailbump(size_t tail, size_t size){
-	return tail-1 < 0 ? size-1 : tail-1;
-}
-
-size_t _rb_push(RingBuffer* r, void* data, size_t num){
-	size_t written = 0;
-	char* src = (char*)data;
-	while(r->head != r->tail-1 && written != num){
-		size_t n = num;
-		while(n--)
-			r->buffer[r->head*r->elsize+n] = *src++;
-
-		r->head = (r->head+1) % r->size; 
-		//data = data+1;
-		written++;
-
-	}
-	return written;
-}
-
-size_t _rb_pop(RingBuffer* r, void* data, size_t num){
-	size_t written = 0;
-
-	while(r->tail != r->head && written != num){
-		size_t n = num;
-		while(n--){
-			*((char*)data) = r->buffer[r->tail*r->elsize+n];
-			data = (char*)data+1;
-		}
-		r->tail = (r->tail+1) % r->size;
-		written++;
-
-	}
-	return written;
 }
