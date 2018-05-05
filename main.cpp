@@ -13,9 +13,9 @@
 
 // -----------------------
 // SET TEST DEFINITONS HERE
-#define LOCKING
+// #define LOCKING
 // #define LOCK_FREE
-#define EXTRA_WORK
+// #define EXTRA_WORK
 // -----------------------
 
 #ifdef LOCK_FREE
@@ -69,8 +69,6 @@ char filename[2048];
 void produce(){
   while(run){
 
-    size_t num = 0;
-
   #ifdef LOCKING
     std::unique_lock<std::mutex> lk(wav_mutex);
 
@@ -79,7 +77,7 @@ void produce(){
   #endif
 
     // write data to buffer
-    num = PUSH(&rb, wb.data+wb.index, buffRequest);
+    size_t num = PUSH(&rb, wb.data+wb.index, buffRequest);
 
     // update buffer request
     if(num > 256)

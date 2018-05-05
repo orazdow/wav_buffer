@@ -2,7 +2,7 @@
 #### Audio Synchronization Project
 
 ##### Building:
-\- Requires PortAudio\
+\- Requires PortAudio (windows dll and headers are provided in the portaudio_win directory)\
 \- edit Makefile or w32build.bat to point to PortAudio include and build directories\
 \- G++: run Makefile\
 \- MSVC: run w32build.bat

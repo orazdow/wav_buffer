@@ -4,15 +4,11 @@ TARGET = wavbuff.exe
 builddir = build/
 
 SRC = main.cpp wavutil.c pa.cpp pa_ringbuffer.c rb.c 
-
 SRCDIR_2 = lib
 
-PortAudio_Lib = D:/Libraries/portaudio/build
-PortAudio_Include = D:/Libraries/portaudio/include
- 
-INCLUDE = -I$(PortAudio_Include) 
+INCLUDE = -Iportaudio_win/include
 INCLUDE += -Ilib
-LIBS = -L$(PortAudio_Lib) 
+LIBS = -Lportaudio_win/build
 LIBS += -lportaudio
 
 CXX = g++
